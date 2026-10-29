@@ -1,0 +1,4 @@
+/tmp/stage/key.material
+203.0.113.44
+deploy
+/var/www/deploy/.ssh/id_rsa

@@ -1,0 +1,2 @@
+# SYNTHETIC — deploy user crontab excerpt
+*/15 * * * * /usr/local/bin/sync-metrics.sh

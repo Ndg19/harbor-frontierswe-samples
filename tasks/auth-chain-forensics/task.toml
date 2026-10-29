@@ -1,0 +1,33 @@
+schema_version = "1.2"
+artifacts = ["/app/submission"]
+
+[task]
+name = "ndg19/auth-chain-forensics"
+description = "Reconstruct a synthetic SSH brute-force and lateral movement chain from offline logs."
+keywords = ["security", "forensics", "incident-response"]
+
+[metadata]
+author_name = "Nigusie Dessalegn"
+author_email = "kingniguse81@gmail.com"
+difficulty = "hard"
+category = "security"
+version = "0.1.0"
+
+[agent]
+timeout_sec = 72000.0
+
+[verifier]
+timeout_sec = 1800.0
+environment_mode = "separate"
+
+[verifier.environment]
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+
+[environment]
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096

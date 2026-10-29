@@ -1,0 +1,197 @@
+diff --git a/slotted_cbor/__init__.py b/slotted_cbor/__init__.py
+index 3d7ad05..8f9ec94 100644
+--- a/slotted_cbor/__init__.py
++++ b/slotted_cbor/__init__.py
+@@ -1,2 +1,3 @@
+ from slotted_cbor.cbor import decode_map, encode_map
+-__all__ = ["encode_map", "decode_map"]
++from slotted_cbor.frame import decode_stream, encode_stream, stream_decode_lines
++__all__ = ["encode_map", "decode_map", "encode_stream", "decode_stream", "stream_decode_lines"]
+diff --git a/slotted_cbor/__main__.py b/slotted_cbor/__main__.py
+index 5036e22..0df4607 100644
+--- a/slotted_cbor/__main__.py
++++ b/slotted_cbor/__main__.py
+@@ -1,6 +1,42 @@
++"""CLI for slotted CBOR framing."""
++
+ from __future__ import annotations
+ 
++import argparse
+ import sys
++from pathlib import Path
++
++from slotted_cbor.frame import FramingError, decode_stream, encode_stream, stream_decode_lines
++
++
++def _fail(exc: FramingError) -> None:
++    print(f"SLCB:{exc.code}:{exc}", file=sys.stderr)
++    raise SystemExit(exc.code)
++
++
++def main() -> None:
++    ap = argparse.ArgumentParser(prog="slotted_cbor")
++    sub = ap.add_subparsers(dest="cmd", required=True)
++    enc = sub.add_parser("encode")
++    enc.add_argument("--manifest", required=True)
++    enc.add_argument("--output", required=True)
++    dec = sub.add_parser("decode")
++    dec.add_argument("--input", required=True)
++    dec.add_argument("--output-dir", required=True)
++    st = sub.add_parser("stream-decode")
++    st.add_argument("--input", required=True)
++    args = ap.parse_args()
++    try:
++        if args.cmd == "encode":
++            encode_stream(Path(args.manifest), Path(args.output))
++        elif args.cmd == "decode":
++            decode_stream(Path(args.input), Path(args.output_dir))
++        else:
++            for line in stream_decode_lines(Path(args.input)):
++                print(line)
++    except FramingError as err:
++        _fail(err)
++
+ 
+-print("slotted_cbor CLI unavailable in upstream stub", file=sys.stderr)
+-raise SystemExit(1)
++if __name__ == "__main__":
++    main()
+diff --git a/slotted_cbor/frame.py b/slotted_cbor/frame.py
+index ab19705..ceb1e08 100644
+--- a/slotted_cbor/frame.py
++++ b/slotted_cbor/frame.py
+@@ -1,9 +1,63 @@
+-"""Slotted CBOR framing v1 (stub — not implemented)."""
++"""Slotted CBOR framing v1."""
+ 
+ from __future__ import annotations
+ 
++import json
++import struct
+ from pathlib import Path
+ 
++from slotted_cbor.cbor import decode_map, encode_map
++
++MAGIC = b"SLCB" + bytes([1])
++
++
++def crc32c(data: bytes) -> int:
++    table = [
++        0x00000000, 0xF26B8303, 0xE13B70F7, 0x1350F3F4, 0xC79A971F, 0x35F1141C, 0x26A1E7E8, 0xD4CF66EB,
++        0x8AD958CF, 0x78B2DBCC, 0x6BE22838, 0x9989AB3B, 0x4D43CEC0, 0xBF284CD3, 0xAC78BF27, 0x5E133C24,
++        0x105EC76F, 0xE235446C, 0xF165B798, 0x030E349B, 0xD7C45070, 0x25AFD373, 0x36FF2087, 0xC494A384,
++        0x9A879FA0, 0x68EC1CA3, 0x7BBCEF57, 0x89D76C54, 0x5D1D08BF, 0xAF768BBC, 0xBC267848, 0x4E4DFB4B,
++        0x20BD8EDE, 0xD2D60DDD, 0xC186FE29, 0x33ED7D2A, 0xE72719C1, 0x154C9AC2, 0x061C6936, 0xF477EA35,
++        0xAA64D611, 0x580F5512, 0x4B5FA6E6, 0xB93425E5, 0x6DFE410E, 0x9F95C20D, 0x8CC531F9, 0x7EAEB2FA,
++        0x30E349B1, 0xC288CAB2, 0xD1D83946, 0x23B3BA45, 0xF779DEAE, 0x05125DAD, 0x1642AE59, 0xE4292D5A,
++        0xBA3A117E, 0x4851927D, 0x5B016189, 0xA96AE28A, 0x7DA08661, 0x8FCB0562, 0x9C9BF696, 0x6EF07595,
++        0x417B1DBC, 0xB3109EBF, 0xA0406D4B, 0x522BEE48, 0x86E18AA3, 0x748A09A0, 0x67DAFA54, 0x95B17957,
++        0xCBA24573, 0x39C9C670, 0x2A993584, 0xD8F2B687, 0x0C38D26C, 0xFE53516F, 0xED03A29B, 0x1F682198,
++        0x5125DAD3, 0xA34E59D0, 0xB01EAA24, 0x42752927, 0x96BF4DCC, 0x64D4CECF, 0x77843D3B, 0x85EFBE38,
++        0xDBFC821C, 0x2997011F, 0x3AC7F2EB, 0xC8AC71E8, 0x1C661503, 0xEE0D9600, 0xFD5D65F4, 0x0F36E6F7,
++        0x61C69362, 0x93AD1061, 0x80FDE395, 0x72966096, 0xA65C047D, 0x5437877E, 0x4767748A, 0xB50CF789,
++        0xEB1FCBAD, 0x197448AE, 0x0A24BB5A, 0xF84F3859, 0x2C855CB2, 0xDEEEDFB1, 0xCDBE2C45, 0x3FD5AF46,
++        0x7198540D, 0x83F3D70E, 0x90A324FA, 0x62C8A7F9, 0xB602C312, 0x44694011, 0x5739B3E5, 0xA55230E6,
++        0xFB410CC2, 0x092A8FC1, 0x1A7A7C35, 0xE811FF36, 0x3CDB9BDD, 0xCEB018DE, 0xDDE0EB2A, 0x2F8B6829,
++        0x82F63B78, 0x709DB87B, 0x63CD4B8F, 0x91A6C88C, 0x456CAC67, 0xB7072F64, 0xA457DC90, 0x563C5F93,
++        0x082F63B7, 0xFA44E0B4, 0xE9141340, 0x1B7F9043, 0xCFB5F4A8, 0x3DDE77AB, 0x2E8E845F, 0xDCE5075C,
++        0x92A8FC17, 0x60C37F14, 0x73938CE0, 0x81F80FE3, 0x55326B08, 0xA759E80B, 0xB4091BFF, 0x466298FC,
++        0x1871A4D8, 0xEA1A27DB, 0xF94AD42F, 0x0B21572C, 0xDFEB33C7, 0x2D80B0C4, 0x3ED04330, 0xCCBBC033,
++        0xA24BB5A6, 0x502036A5, 0x4370C551, 0xB11B4652, 0x65D122B9, 0x97BAA1BA, 0x84EA524E, 0x7681D14D,
++        0x2892ED69, 0xDAF96E6A, 0xC9A99D9E, 0x3BC21E9D, 0xEF087A76, 0x1D63F975, 0x0E330A81, 0xFC588982,
++        0xB21572C9, 0x407EF1CA, 0x532E023E, 0xA145813D, 0x758FE5D6, 0x87E466D5, 0x94B49521, 0x66DF1622,
++        0x38CC2A06, 0xCAA7A905, 0xD9F75AF1, 0x2B9CD9F2, 0xFF56BD19, 0x0D3D3E1A, 0x1E6DCDEE, 0xEC064EED,
++        0xC38D26C4, 0x31E6A5C7, 0x22B65633, 0xD0DDD530, 0x0417B1DB, 0xF67C32D8, 0xE52CC12C, 0x1747422F,
++        0x49547E0B, 0xBB3FFD08, 0xA86F0EFC, 0x5A048DFF, 0x8ECEE914, 0x7CA56A17, 0x6FF599E3, 0x9D9E1AE0,
++        0xD3D3E1AB, 0x21B862A8, 0x32E8915C, 0xC083125F, 0x144976B4, 0xE622F5B7, 0xF5720643, 0x07198540,
++        0x590AB964, 0xAB613A67, 0xB831C993, 0x4A5A4A90, 0x9E902E7B, 0x6CFBAD78, 0x7FAB5E8C, 0x8DC0DD8F,
++        0xE330A81A, 0x115B2B19, 0x020BD8ED, 0xF0605BEE, 0x24AA3F05, 0xD6C1BC06, 0xC5914FF2, 0x37FACCF1,
++        0x69E9F0D5, 0x9B8273D6, 0x88D88022, 0x7AB30321, 0xAE7967CA, 0x5C12E4C9, 0x4F42173D, 0xBD29943E,
++        0xF3640A59, 0x010F893A, 0x125F7ACE, 0xE034F9CD, 0x34FE9D26, 0xC6951E25, 0xD5C5EDD1, 0x27AE6ED2,
++        0x79BDDCB6, 0x8BD65FB5, 0x9886AC41, 0x6AED2F42, 0xBE274BA9, 0x4C4CC8AA, 0x5F1C3B5E, 0xAD77B85D,
++        0x3A0798F8, 0xC86C1BFB, 0xDB3CE80F, 0x29576B0C, 0xFD9D0FE7, 0x0FF68CE4, 0x1CA67F10, 0xEECDFC13,
++        0xB0DEAE37, 0x42B52D34, 0x51E5DEC0, 0xA38E5DC3, 0x77443928, 0x852FBA2B, 0x967F49DF, 0x6414CADC,
++        0x3A5D4722, 0xC834E421, 0xDB6417D5, 0x290F94D6, 0xFDC5F03D, 0x0FAE733E, 0x1CFE80CA, 0xEE9503C9,
++        0xB0861ED1, 0x42ED9DD2, 0x51BD6E26, 0xA3D6ED25, 0x771C89CE, 0x85770ACD, 0x9627F939, 0x784C7A3A,
++        0x265F5F1E, 0xD434DC1D, 0xC7642FE9, 0x350FACEA, 0xE1C5C801, 0x13AE4B02, 0x00FEB8F6, 0xF2953BF5,
++        0xBCD890BE, 0x4EB313BD, 0x5DE3E049, 0xAF88634A, 0x7B4207A1, 0x892984A2, 0x9A797756, 0x6812F455,
++        0x3601C8D1, 0xC46A4BD2, 0xD73AB826, 0x25513B25, 0xF19B5FCE, 0x03F0DCCD, 0x10A02F39, 0xE2CBAC3A,
++    ]
++    crc = 0xFFFFFFFF
++    for byte in data:
++        crc = table[(crc ^ byte) & 0xFF] ^ (crc >> 8)
++    return crc ^ 0xFFFFFFFF
++
+ 
+ class FramingError(Exception):
+     def __init__(self, code: int, message: str):
+@@ -11,13 +65,66 @@ class FramingError(Exception):
+         self.code = code
+ 
+ 
++def _frame(slot: int, name: str, body: bytes) -> bytes:
++    payload = encode_map({"name": name, "body": body})
++    crc = crc32c(payload)
++    return struct.pack(">III", slot, len(payload), crc) + payload
++
++
+ def encode_stream(manifest_path: Path, output_path: Path) -> None:
+-    raise NotImplementedError("framing encode not implemented in upstream stub")
++    manifest = json.loads(manifest_path.read_text())
++    base = manifest_path.parent
++    seen: set[int] = set()
++    out = bytearray(MAGIC)
++    for entry in manifest:
++        slot = int(entry["slot"])
++        if slot in seen:
++            raise FramingError(5, f"duplicate slot {slot}")
++        seen.add(slot)
++        body = (base / entry["path"]).read_bytes()
++        out.extend(_frame(slot, entry["name"], body))
++    output_path.write_bytes(out)
++
++
++def _parse_frames(data: bytes) -> list[tuple[int, str, bytes]]:
++    if len(data) < len(MAGIC) or data[: len(MAGIC)] != MAGIC:
++        raise FramingError(2, "missing header")
++    idx = len(MAGIC)
++    seen: set[int] = set()
++    frames: list[tuple[int, str, bytes]] = []
++    while idx < len(data):
++        if len(data) - idx < 12:
++            raise FramingError(2, "truncated frame header")
++        slot, length, crc = struct.unpack_from(">III", data, idx)
++        idx += 12
++        if len(data) - idx < length:
++            raise FramingError(2, "truncated payload")
++        payload = data[idx : idx + length]
++        idx += length
++        if crc32c(payload) != crc:
++            raise FramingError(3, f"bad crc for slot {slot}")
++        if slot in seen:
++            raise FramingError(5, f"duplicate slot {slot}")
++        seen.add(slot)
++        decoded = decode_map(payload)
++        frames.append((slot, decoded["name"], decoded["body"]))
++    if idx != len(data):
++        raise FramingError(4, "trailing bytes")
++    return frames
+ 
+ 
+ def decode_stream(input_path: Path, output_dir: Path) -> None:
+-    raise NotImplementedError("framing decode not implemented in upstream stub")
++    data = input_path.read_bytes()
++    frames = _parse_frames(data)
++    output_dir.mkdir(parents=True, exist_ok=True)
++    for slot, name, body in frames:
++        (output_dir / name).write_bytes(body)
+ 
+ 
+ def stream_decode_lines(input_path: Path) -> list[str]:
+-    raise NotImplementedError("framing stream decode not implemented in upstream stub")
++    data = input_path.read_bytes()
++    frames = _parse_frames(data)
++    return [
++        json.dumps({"slot": slot, "name": name, "body_hex": body.hex()})
++        for slot, name, body in frames
++    ]

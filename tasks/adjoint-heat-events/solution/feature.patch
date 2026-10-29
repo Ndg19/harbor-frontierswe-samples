@@ -1,0 +1,13 @@
+diff --git a/heat1d/integrator.py b/heat1d/integrator.py
+index e51ee2e..e841eac 100644
+--- a/heat1d/integrator.py
++++ b/heat1d/integrator.py
+@@ -97,7 +97,7 @@ class GridIntegrator:
+         if not sens:
+             return t, center, 0.0, 0.0, u, d_u_dalpha
+         if event_sens:
+-            d_t = 0.0  # stub
++            d_t = self._event_time_sensitivity(u, d_u_dalpha, threshold)
+             return t, center, d_t, 0.0, u, d_u_dalpha
+         d_center = float(d_u_dalpha[self.center_index])
+         return t, center, 0.0, d_center, u, d_u_dalpha

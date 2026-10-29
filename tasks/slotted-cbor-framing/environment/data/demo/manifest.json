@@ -1,0 +1,12 @@
+[
+  {
+    "slot": 1,
+    "name": "alpha.txt",
+    "path": "alpha.txt"
+  },
+  {
+    "slot": 2,
+    "name": "beta.bin",
+    "path": "beta.bin"
+  }
+]
