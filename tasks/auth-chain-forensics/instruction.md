@@ -2,6 +2,8 @@
 
 You are investigating a **fabricated** training incident on the host `lab-gateway`. All artifacts under `/app/evidence` are synthetic teaching data — not real customer systems, live addresses, or undisclosed vulnerabilities.
 
+Read `/app/SCENARIO.md` for timestamp rules and milestone ordering.
+
 ## Artifacts
 
 - `/app/evidence/auth.log` — OpenSSH authentication events
@@ -14,16 +16,16 @@ You are investigating a **fabricated** training incident on the host `lab-gatewa
 Write the following under `/app/submission/`:
 
 1. **`incident_report.json`** with keys:
-   - `timeline`: array of ISO-8601 UTC timestamps (`YYYY-MM-DDTHH:MM:SSZ`) in ascending order describing five milestones: first failed brute force, successful compromise, privilege escalation, lateral web access, data staging.
+   - `timeline`: array of five ISO-8601 UTC timestamps (`YYYY-MM-DDTHH:MM:SSZ`) in ascending order: first failed brute force, successful compromise, privilege escalation, lateral web access, data staging (see SCENARIO.md).
    - `compromised_account`: Unix username taken over on `lab-gateway`
-   - `initial_vector`: short string (`ssh_password_spray`, `web_exploit`, etc.)
-   - `lateral_steps`: array of short human-readable steps (≥ 2 entries)
-   - `exfil_indicator`: hostname or URI observed in access logs for bulk transfer
-   - `recommended_controls`: array of ≥ 3 concrete hardening actions
+   - `initial_vector`: use `ssh_password_spray` when evidence shows repeated SSH password failures followed by acceptance
+   - `lateral_steps`: array of ≥ 2 short human-readable steps (wording is free-form)
+   - `exfil_indicator`: hostname or URI from access logs for bulk transfer (must include the staging host used in the PUT line)
+   - `recommended_controls`: array of ≥ 3 concrete hardening actions (wording is free-form)
 
-2. **`ioc.txt`**: one indicator per line (IPv4, username, or file path mentioned in evidence), sorted lexicographically, no duplicates.
+2. **`ioc.txt`**: one indicator per line (IPv4, username, or file path that appears in the evidence), sorted lexicographically, no duplicates. Include the attacker IP, compromised username, staged key path, and source private-key path from the logs.
 
-Ground truth is **derivable only from the provided evidence**. Verification compares normalized content to expected answers; every required field must match for a pass.
+Scoring checks structured fields and IOC set equality; free-form sentences in `lateral_steps` and `recommended_controls` are not compared verbatim.
 
 ## Constraints
 

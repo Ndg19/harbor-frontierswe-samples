@@ -1,0 +1,18 @@
+{
+  "timeline": [
+    "2025-10-28T03:12:01Z",
+    "2025-10-28T03:12:15Z",
+    "2025-10-28T03:14:22Z",
+    "2025-10-28T03:16:05Z",
+    "2025-10-28T03:18:40Z"
+  ],
+  "compromised_account": "deploy",
+  "initial_vector": "ssh_password_spray",
+  "exfil_indicator_substr": "staging.repo.lab.invalid",
+  "ioc_lines": [
+    "203.0.113.44",
+    "deploy",
+    "/tmp/stage/key.material",
+    "/var/www/deploy/.ssh/id_rsa"
+  ]
+}

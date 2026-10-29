@@ -17,7 +17,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 LOGS = Path("/logs/verifier")
 SUBMISSION = Path("/app/submission")
-WEIGHTS = {"1": 20, "2": 25, "3": 20, "4": 25, "5": 10}
+WEIGHTS = {"1": 15, "2": 20, "3": 20, "4": 20, "5": 10, "6": 15}
 
 
 def read_json(path: Path) -> dict:
@@ -95,6 +95,22 @@ def main() -> None:
         fixture = read_json(HERE / "fixtures" / f"{name}.json")
         cfg = fixture["input"]
         expected = fixture["expected"]
+        if name == "resume":
+            first = invoke(name, cfg)
+            second = invoke(name, cfg)
+            for label, actual in (("run1", first), ("run2", second)):
+                for key in ("values", "derivatives"):
+                    for field in expected[key]:
+                        compare(
+                            actual[key][field],
+                            expected[key][field],
+                            1e-4 if field == "end_times" else 3e-4,
+                            2e-4 if field == "end_times" else 0.0,
+                        )
+            for key in ("values", "derivatives"):
+                for field in expected[key]:
+                    compare(first[key][field], second[key][field], 1e-8)
+            return {"idempotent": True}
         actual = invoke(name, cfg)
         nx = int(cfg.get("nx", 0))
         analytic = nx <= 0
@@ -128,6 +144,7 @@ def main() -> None:
         "3": ["multi-step"],
         "4": ["grid-event"],
         "5": ["compat"],
+        "6": ["resume"],
     }
     outcomes = {}
     diagnostics = {}

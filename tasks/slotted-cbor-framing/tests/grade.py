@@ -59,9 +59,17 @@ def main() -> None:
 
     run_cli(["decode", "--input", str(VECTORS / "bad_crc.bin"), "--output-dir", str(work / "x")], expect_code=3)
     run_cli(["decode", "--input", str(VECTORS / "truncated.bin"), "--output-dir", str(work / "y")], expect_code=2)
+    run_cli(
+        ["decode", "--input", str(VECTORS / "duplicate_slot.bin"), "--output-dir", str(work / "z")],
+        expect_code=5,
+    )
+    run_cli(
+        ["decode", "--input", str(VECTORS / "oversized_length.bin"), "--output-dir", str(work / "w")],
+        expect_code=2,
+    )
 
     reward = 1
-    report = {"task_id": "slotted-cbor-framing", "reward": reward, "full_pass": True}
+    report = {"task_id": "slotted-cbor-framing", "reward": reward, "full_pass": True, "probes": "encode,decode,stream,errors"}
     (LOGS / "criteria.json").write_text(json.dumps(report, indent=2))
     (LOGS / "reward.txt").write_text(str(reward))
     print(json.dumps(report))

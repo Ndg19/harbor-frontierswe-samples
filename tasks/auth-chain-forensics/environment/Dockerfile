@@ -3,3 +3,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends bash tmux procp
 WORKDIR /app
 RUN mkdir -p /app/submission /app/evidence/cron && chmod 777 /app/submission
 COPY evidence /app/evidence
+COPY SCENARIO.md /app/SCENARIO.md

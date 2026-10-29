@@ -1,72 +1,56 @@
-"""Verify synthetic IR deliverables."""
+"""Verify synthetic IR deliverables against a hidden rubric."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
 LOGS = Path("/logs/verifier")
 SUBMISSION = Path("/app/submission")
 HERE = Path(__file__).resolve().parent
-GOLDEN_REPORT = json.loads((HERE / "golden_report.json").read_text())
-GOLDEN_IOC = (HERE / "golden_ioc.txt").read_text()
-
-
-def normalize_report(data: dict) -> bytes:
-    timeline = [str(x) for x in data["timeline"]]
-    if timeline != sorted(timeline):
-        raise ValueError("timeline not ascending")
-    if len(timeline) != 5:
-        raise ValueError("timeline must contain five entries")
-    lateral = [str(x) for x in data["lateral_steps"]]
-    if len(lateral) < 2:
-        raise ValueError("lateral_steps too short")
-    controls = [str(x) for x in data["recommended_controls"]]
-    if len(controls) < 3:
-        raise ValueError("recommended_controls too short")
-    normalized = {
-        "timeline": timeline,
-        "compromised_account": str(data["compromised_account"]),
-        "initial_vector": str(data["initial_vector"]),
-        "lateral_steps": lateral,
-        "exfil_indicator": str(data["exfil_indicator"]),
-        "recommended_controls": controls,
-    }
-    return json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode()
-
-
-def normalize_ioc(text: str) -> bytes:
-    lines = sorted({ln.strip() for ln in text.splitlines() if ln.strip()})
-    if len(lines) < 3:
-        raise ValueError("ioc.txt needs at least three indicators")
-    return ("\n".join(lines) + "\n").encode()
-
-
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
 
 
 def main() -> None:
     LOGS.mkdir(parents=True, exist_ok=True)
+    rubric = json.loads((HERE / "rubric.json").read_text())
     report_path = SUBMISSION / "incident_report.json"
     ioc_path = SUBMISSION / "ioc.txt"
-    if not report_path.is_file() or not ioc_path.is_file():
+    errors: list[str] = []
+
+    if not report_path.is_file():
+        errors.append("missing incident_report.json")
+    if not ioc_path.is_file():
+        errors.append("missing ioc.txt")
+    if errors:
         (LOGS / "reward.txt").write_text("0")
-        print(json.dumps({"error": "missing deliverables"}))
+        print(json.dumps({"errors": errors}))
         return
+
     report = json.loads(report_path.read_text())
-    rep_hash = sha256(normalize_report(report))
-    ioc_hash = sha256(normalize_ioc(ioc_path.read_text()))
-    expected = json.loads((HERE / "expected.json").read_text())
-    ok = rep_hash == expected["report_sha256"] and ioc_hash == expected["ioc_sha256"]
-    reward = 1 if ok else 0
-    out = {
-        "task_id": "auth-chain-forensics",
-        "reward": reward,
-        "report_sha256": rep_hash,
-        "ioc_sha256": ioc_hash,
-    }
+    timeline = [str(x) for x in report.get("timeline", [])]
+    if timeline != rubric["timeline"]:
+        errors.append("timeline mismatch")
+    if str(report.get("compromised_account", "")) != rubric["compromised_account"]:
+        errors.append("compromised_account mismatch")
+    if str(report.get("initial_vector", "")) != rubric["initial_vector"]:
+        errors.append("initial_vector mismatch")
+    exfil = str(report.get("exfil_indicator", ""))
+    if rubric["exfil_indicator_substr"] not in exfil:
+        errors.append("exfil_indicator mismatch")
+    lateral = report.get("lateral_steps", [])
+    if not isinstance(lateral, list) or len(lateral) < 2 or not all(str(x).strip() for x in lateral):
+        errors.append("lateral_steps invalid")
+    controls = report.get("recommended_controls", [])
+    if not isinstance(controls, list) or len(controls) < 3 or not all(str(x).strip() for x in controls):
+        errors.append("recommended_controls invalid")
+
+    ioc_lines = sorted({ln.strip() for ln in ioc_path.read_text().splitlines() if ln.strip()})
+    expected_ioc = sorted(rubric["ioc_lines"])
+    if ioc_lines != expected_ioc:
+        errors.append("ioc.txt mismatch")
+
+    reward = 0 if errors else 1
+    out = {"task_id": "auth-chain-forensics", "reward": reward, "errors": errors}
     (LOGS / "criteria.json").write_text(json.dumps(out, indent=2))
     (LOGS / "reward.txt").write_text(str(reward))
     print(json.dumps(out))

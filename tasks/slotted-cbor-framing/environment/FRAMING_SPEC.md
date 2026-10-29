@@ -34,4 +34,4 @@ Array of objects `{ "slot": int, "name": str, "path": str }`. Paths are relative
 
 ## Streaming
 
-`stream-decode` reads the input file incrementally (4096-byte chunks internally) and must emit one JSON object per completed frame: `{ "slot": int, "name": str, "body_hex": str }`.
+`stream-decode` reads from the input file through a stream interface (no requirement to load the entire file before parsing the first frame). It must emit one JSON object per completed frame: `{ "slot": int, "name": str, "body_hex": str }`. Incomplete frames, bad CRC, duplicate slots, and trailing bytes after the last frame use the same error codes as `decode`.

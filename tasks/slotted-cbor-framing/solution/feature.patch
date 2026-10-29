@@ -57,10 +57,10 @@ index 5036e22..0df4607 100644
 +if __name__ == "__main__":
 +    main()
 diff --git a/slotted_cbor/frame.py b/slotted_cbor/frame.py
-index ab19705..ceb1e08 100644
+index ab19705..df5a40d 100644
 --- a/slotted_cbor/frame.py
 +++ b/slotted_cbor/frame.py
-@@ -1,9 +1,63 @@
+@@ -1,8 +1,63 @@
 -"""Slotted CBOR framing v1 (stub — not implemented)."""
 +"""Slotted CBOR framing v1."""
  
@@ -69,7 +69,8 @@ index ab19705..ceb1e08 100644
 +import json
 +import struct
  from pathlib import Path
- 
++from typing import BinaryIO
++
 +from slotted_cbor.cbor import decode_map, encode_map
 +
 +MAGIC = b"SLCB" + bytes([1])
@@ -121,11 +122,10 @@ index ab19705..ceb1e08 100644
 +    for byte in data:
 +        crc = table[(crc ^ byte) & 0xFF] ^ (crc >> 8)
 +    return crc ^ 0xFFFFFFFF
-+
+ 
  
  class FramingError(Exception):
-     def __init__(self, code: int, message: str):
-@@ -11,13 +65,66 @@ class FramingError(Exception):
+@@ -11,13 +66,78 @@ class FramingError(Exception):
          self.code = code
  
  
@@ -151,21 +151,27 @@ index ab19705..ceb1e08 100644
 +    output_path.write_bytes(out)
 +
 +
-+def _parse_frames(data: bytes) -> list[tuple[int, str, bytes]]:
-+    if len(data) < len(MAGIC) or data[: len(MAGIC)] != MAGIC:
++def _read_exact(fh, n: int) -> bytes:
++    buf = fh.read(n)
++    if buf is None or len(buf) < n:
++        raise FramingError(2, "truncated stream")
++    return buf
++
++
++def _parse_frames_from_stream(fh) -> list[tuple[int, str, bytes]]:
++    magic = _read_exact(fh, len(MAGIC))
++    if magic != MAGIC:
 +        raise FramingError(2, "missing header")
-+    idx = len(MAGIC)
 +    seen: set[int] = set()
 +    frames: list[tuple[int, str, bytes]] = []
-+    while idx < len(data):
-+        if len(data) - idx < 12:
++    while True:
++        header = fh.read(12)
++        if not header:
++            break
++        if len(header) < 12:
 +            raise FramingError(2, "truncated frame header")
-+        slot, length, crc = struct.unpack_from(">III", data, idx)
-+        idx += 12
-+        if len(data) - idx < length:
-+            raise FramingError(2, "truncated payload")
-+        payload = data[idx : idx + length]
-+        idx += length
++        slot, length, crc = struct.unpack(">III", header)
++        payload = _read_exact(fh, length)
 +        if crc32c(payload) != crc:
 +            raise FramingError(3, f"bad crc for slot {slot}")
 +        if slot in seen:
@@ -173,24 +179,30 @@ index ab19705..ceb1e08 100644
 +        seen.add(slot)
 +        decoded = decode_map(payload)
 +        frames.append((slot, decoded["name"], decoded["body"]))
-+    if idx != len(data):
++    if fh.read(1):
 +        raise FramingError(4, "trailing bytes")
 +    return frames
++
++
++def _parse_frames(data: bytes) -> list[tuple[int, str, bytes]]:
++    from io import BytesIO
++
++    return _parse_frames_from_stream(BytesIO(data))
  
  
  def decode_stream(input_path: Path, output_dir: Path) -> None:
 -    raise NotImplementedError("framing decode not implemented in upstream stub")
-+    data = input_path.read_bytes()
-+    frames = _parse_frames(data)
++    with input_path.open("rb") as fh:
++        frames = _parse_frames_from_stream(fh)
 +    output_dir.mkdir(parents=True, exist_ok=True)
-+    for slot, name, body in frames:
++    for _slot, name, body in frames:
 +        (output_dir / name).write_bytes(body)
  
  
  def stream_decode_lines(input_path: Path) -> list[str]:
 -    raise NotImplementedError("framing stream decode not implemented in upstream stub")
-+    data = input_path.read_bytes()
-+    frames = _parse_frames(data)
++    with input_path.open("rb") as fh:
++        frames = _parse_frames_from_stream(fh)
 +    return [
 +        json.dumps({"slot": slot, "name": name, "body_hex": body.hex()})
 +        for slot, name, body in frames

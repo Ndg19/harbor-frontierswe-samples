@@ -1,0 +1,42 @@
+{
+  "input": {
+    "alpha": 0.06,
+    "nx": 0,
+    "steps": [
+      {
+        "kind": "duration",
+        "value": 0.01
+      },
+      {
+        "kind": "event",
+        "threshold": 0.45
+      }
+    ],
+    "flags": {
+      "calculate_sensitivities": true,
+      "calculate_event_sensitivities": true
+    }
+  },
+  "expected": {
+    "values": {
+      "end_times": [
+        0.01,
+        1.3484290821383487
+      ],
+      "end_centers": [
+        0.994095736436899,
+        0.45
+      ]
+    },
+    "derivatives": {
+      "end_times": [
+        0.0,
+        22.473818035639145
+      ],
+      "end_centers": [
+        -0.09811331655441785,
+        0.0
+      ]
+    }
+  }
+}
