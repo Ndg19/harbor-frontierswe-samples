@@ -1,13 +1,16 @@
-The repository under `/app/repo` ships a **restricted CBOR** encoder and decoder for maps with UTF-8 string keys and byte-string values, plus small integers and text. Downstream transport needs a **slotted framing layer** so multiplexed records can be streamed safely over pipes and sockets.
+`/app/repo` already exposes a small CBOR codec (maps with UTF-8 keys, byte-string values, plus basic text and integers). Services now need a framed transport on top so records can be multiplexed over pipes and sockets without losing framing.
 
-Read `/app/FRAMING_SPEC.md` and implement the framing protocol on top of the existing CBOR subset. Deliver an importable package at `/app/submission/slotted_cbor` exposing the same CBOR API and new framing helpers, plus a module CLI:
+Implement version 1 from `/app/FRAMING_SPEC.md`.
 
-- `python -m slotted_cbor encode --manifest PATH --output PATH`
-- `python -m slotted_cbor decode --input PATH --output-dir PATH`
-- `python -m slotted_cbor stream-decode --input PATH` (write one JSON line per frame to stdout)
+## Deliverables
 
-Encoding must read a JSON manifest listing `{ "slot": int, "name": str, "path": str }` entries relative to the manifest directory, wrap each payload as specified, and reject duplicate slot identifiers. Decoding must verify **Castagnoli CRC32C** per frame, enforce unique slots, refuse ambiguous trailing bytes, and surface stable error codes from the spec. Streaming decode must tolerate partial reads without losing synchronization after a complete frame.
+1. **Framing module** in `/app/submission/slotted_cbor`, keeping the existing `encode_map` / `decode_map` API unchanged for callers that only need CBOR.
 
-Bundled corpora live under `/app/data/` for local development. Hidden verification uses additional mutation streams (truncated frames, bad CRC, duplicate slots, oversized length fields). A full pass requires every probe to succeed; partial credit is not awarded.
+2. **CLI** via `python -m slotted_cbor`:
+   - `encode --manifest PATH --output PATH` — read a JSON manifest (`slot`, `name`, `path` relative to the manifest directory), reject duplicate slots, write a framed stream.
+   - `decode --input PATH --output-dir PATH` — verify Castagnoli CRC32C per frame, enforce unique slots, reject trailing garbage.
+   - `stream-decode --input PATH` — one JSON line per frame on stdout (`slot`, `name`, `body_hex`).
 
-Do not modify files under `/app/data`. Keep the CBOR subset backward compatible for callers that only import encode/decode map helpers.
+3. **Error handling.** Truncated input, CRC failures, duplicate slot IDs, and trailing bytes after the last frame exit with the codes documented in the spec (`SLCB:<code>:...` on stderr).
+
+Example corpus under `/app/data/` is for local testing; do not modify those files.

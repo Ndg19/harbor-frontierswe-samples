@@ -1,15 +1,15 @@
-# Synthetic lab scenario (agent-visible)
+# lab-gateway runbook (training data)
 
-All evidence is fictional training material for `lab-gateway`.
+Everything in `/app/evidence` is fictional.
 
-## Timestamp rule
+## Timestamps
 
-`auth.log` lines omit the year. **`access.log` uses year 2025** (`28/Oct/2025`). When building ISO-8601 UTC timestamps for the report timeline, use **2025-10-28** with the time-of-day taken from the relevant `auth.log` or `access.log` line (UTC).
+`auth.log` lines do not include a year. `access.log` does (`28/Oct/2025`). When you emit UTC ISO times for the report, use **2025-10-28** and take the clock time from whichever log line you are anchoring.
 
-## Expected milestone order
+## Timeline milestones (in order)
 
-1. First failed brute-force attempt (earliest failed SSH password in `auth.log`)
-2. Successful SSH compromise (`Accepted password`)
-3. Privilege escalation (`sudo` copying key material)
-4. Lateral web access (first suspicious HTTP GET in `access.log`)
-5. Data staging (bulk PUT / exfil hostname in `access.log`)
+1. Earliest failed SSH password attempt in `auth.log`
+2. First `Accepted password` for the compromised user
+3. The `sudo` line that copies key material under `/tmp/stage/`
+4. First relevant HTTP GET in `access.log`
+5. The PUT to the staging host in `access.log`

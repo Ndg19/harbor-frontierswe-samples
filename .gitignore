@@ -5,4 +5,6 @@ venv/
 jobs/
 *.egg-info/
 _build/
+_rebuild*/
+_rebuild_work/
 .DS_Store
